@@ -369,7 +369,7 @@ fn compose_message(pair: &Pair<String>, input: &Input) -> Result<Message, fmt::E
 * * *
 Brought to you by secret-santa[1].
 
-[1]: https://github.com/shanecelis/secret-santa/blob/main/src/main.rs
+[1]: https://github.com/shanecelis/secret-santa
 "#
     )?;
 
