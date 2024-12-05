@@ -1,16 +1,19 @@
+use clap::Parser;
+use cmd_lib::run_cmd;
+use rand::prelude::IteratorRandom;
+use ron::ser::PrettyConfig;
+use satoxid::{
+    constraints::{And, ExactlyK, If, Not, Or},
+    Backend, CadicalEncoder, Encoder, Model,
+};
 use serde::{Deserialize, Serialize};
-use satoxid::{CadicalEncoder, constraints::{Or, ExactlyK, Not, And, If}, Encoder, Backend, Model};
 use std::{
     cmp::Reverse,
     fmt::{self, Debug, Write},
     fs::File,
-    path::PathBuf,
     hash::Hash,
+    path::PathBuf,
 };
-use rand::prelude::IteratorRandom;
-use clap::Parser;
-use ron::ser::PrettyConfig;
-use cmd_lib::run_cmd;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -49,11 +52,17 @@ impl Input {
         for solution in &self.history {
             for pair in &solution.pairs {
                 if !self.people.iter().any(|p| p.name == pair.giver) {
-                    panic!("Giver named '{}' present in history but not found in people set.", &pair.giver);
+                    panic!(
+                        "Giver named '{}' present in history but not found in people set.",
+                        &pair.giver
+                    );
                 }
 
                 if !self.people.iter().any(|p| p.name == pair.receiver) {
-                    panic!("Receiver named '{}' present in history but not found in people set.", &pair.receiver);
+                    panic!(
+                        "Receiver named '{}' present in history but not found in people set.",
+                        &pair.receiver
+                    );
                 }
             }
         }
@@ -67,75 +76,131 @@ struct Person {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
-struct Pair<T> where T: Debug + Eq + Hash + PartialEq + Clone {
+struct Pair<T>
+where
+    T: Debug + Eq + Hash + PartialEq + Clone,
+{
     giver: T,
     receiver: T,
 }
 
-impl<T> Pair<T> where T: Debug + Eq + Hash + PartialEq + Clone {
+impl<T> Pair<T>
+where
+    T: Debug + Eq + Hash + PartialEq + Clone,
+{
     fn new(x: T, y: T) -> Self {
-        Self { giver: x, receiver: y }
+        Self {
+            giver: x,
+            receiver: y,
+        }
     }
 }
 
-fn encode_secret_santa_rules<T: Debug + Eq + Hash + PartialEq + Clone>(universe: &[T], encoder: &mut Encoder<Pair<T>, impl Backend>) {
+fn encode_secret_santa_rules<T: Debug + Eq + Hash + PartialEq + Clone>(
+    universe: &[T],
+    encoder: &mut Encoder<Pair<T>, impl Backend>,
+) {
     let len = universe.len();
     // Each person is someone's giver.
     for p in 0..universe.len() {
         // let lits = (0..len).filter_map(|x| (x != p).then_some(Pair { giver: universe[p].clone(), receiver: universe[x].clone() }));
-        let lits = (0..len).filter_map(|x| (true).then_some(Pair { giver: universe[p].clone(), receiver: universe[x].clone() }));
+        let lits = (0..len).filter_map(|x| {
+            (true).then_some(Pair {
+                giver: universe[p].clone(),
+                receiver: universe[x].clone(),
+            })
+        });
         encoder.add_constraint(ExactlyK { k: 1, lits });
     }
     // Each person is someone's receiver.
     for p in 0..universe.len() {
         // let lits = (0..len).filter_map(|x| (x != p).then_some(Pair { giver: universe[x].clone(), receiver: universe[p].clone() }));
-        let lits = (0..len).filter_map(|x| (true).then_some(Pair { giver: universe[x].clone(), receiver: universe[p].clone() }));
+        let lits = (0..len).filter_map(|x| {
+            (true).then_some(Pair {
+                giver: universe[x].clone(),
+                receiver: universe[p].clone(),
+            })
+        });
         encoder.add_constraint(ExactlyK { k: 1, lits });
     }
 
     // No one can give to themselves.
-    let lits = (0..len).map(|p| Pair { giver: universe[p].clone(), receiver: universe[p].clone() });
+    let lits = (0..len).map(|p| Pair {
+        giver: universe[p].clone(),
+        receiver: universe[p].clone(),
+    });
     encoder.add_constraint(Not(Or(lits)));
 
     // Don't have small cycles.
     for p in 0..universe.len() {
         for j in p..universe.len() {
-            encoder.add_constraint(If { cond: Pair { giver: universe[p].clone(), receiver: universe[j].clone() },
-                                        then: Not(Pair { giver: universe[j].clone(), receiver: universe[p].clone() }) });
-
+            encoder.add_constraint(If {
+                cond: Pair {
+                    giver: universe[p].clone(),
+                    receiver: universe[j].clone(),
+                },
+                then: Not(Pair {
+                    giver: universe[j].clone(),
+                    receiver: universe[p].clone(),
+                }),
+            });
         }
     }
 }
 
-fn include_pairs<T: Debug + Eq + Hash + PartialEq + Clone>(lits: impl Iterator<Item = Pair<T>> + Clone,
-                                                           encoder: &mut Encoder<Pair<T>, impl Backend>) {
+fn include_pairs<T: Debug + Eq + Hash + PartialEq + Clone>(
+    lits: impl Iterator<Item = Pair<T>> + Clone,
+    encoder: &mut Encoder<Pair<T>, impl Backend>,
+) {
     encoder.add_constraint(And(lits));
 }
 
-fn exclude_pairs<T: Debug + Eq + Hash + PartialEq + Clone>(lits: impl Iterator<Item = Pair<T>> + Clone,
-                                                           encoder: &mut Encoder<Pair<T>, impl Backend>) {
+fn exclude_pairs<T: Debug + Eq + Hash + PartialEq + Clone>(
+    lits: impl Iterator<Item = Pair<T>> + Clone,
+    encoder: &mut Encoder<Pair<T>, impl Backend>,
+) {
     encoder.add_constraint(Not(Or(lits)));
 }
 
 #[allow(dead_code)]
-fn exclude_some_pairs<T: Debug + Eq + Hash + PartialEq + Clone>(lits: impl Iterator<Item = Pair<T>> + Clone,
-                                                           encoder: &mut Encoder<Pair<T>, impl Backend>) {
+fn exclude_some_pairs<T: Debug + Eq + Hash + PartialEq + Clone>(
+    lits: impl Iterator<Item = Pair<T>> + Clone,
+    encoder: &mut Encoder<Pair<T>, impl Backend>,
+) {
     encoder.add_constraint(Not(And(lits)));
 }
 
-fn exclude_pairs_symmetric<T: Debug + Eq + Hash + PartialEq + Clone>(lits: impl Iterator<Item = Pair<T>> + Clone,
-                                                                     encoder: &mut Encoder<Pair<T>, impl Backend>) {
+fn exclude_pairs_symmetric<T: Debug + Eq + Hash + PartialEq + Clone>(
+    lits: impl Iterator<Item = Pair<T>> + Clone,
+    encoder: &mut Encoder<Pair<T>, impl Backend>,
+) {
     exclude_pairs(lits.clone(), encoder);
-    exclude_pairs(lits.map(|Pair { giver: a, receiver: b }| Pair { giver: b, receiver: a }), encoder);
+    exclude_pairs(
+        lits.map(
+            |Pair {
+                 giver: a,
+                 receiver: b,
+             }| Pair {
+                giver: b,
+                receiver: a,
+            },
+        ),
+        encoder,
+    );
 }
 
-fn exclude_sets<T: Debug + Eq + Hash + PartialEq + Clone>(people: &[T],
-                                                          encoder: &mut Encoder<Pair<T>, impl Backend>) {
+fn exclude_sets<T: Debug + Eq + Hash + PartialEq + Clone>(
+    people: &[T],
+    encoder: &mut Encoder<Pair<T>, impl Backend>,
+) {
     let len = people.len();
     let mut accum = vec![];
     for x in 0..len {
         for y in x..len {
-            accum.push(Pair { giver: people[x].clone(), receiver: people[y].clone() });
+            accum.push(Pair {
+                giver: people[x].clone(),
+                receiver: people[y].clone(),
+            });
         }
     }
     exclude_pairs_symmetric(accum.into_iter(), encoder);
@@ -150,14 +215,22 @@ struct Message {
 
 /// Return the givers for this person.
 fn givers_for<'a>(receiver: &'a str, input: &'a Input) -> impl Iterator<Item = String> + use<'a> {
-    input.history.iter().flat_map(move |x| x.pairs.iter().filter(move |p| p.receiver == receiver).map(|p|
-                                                                                                      format!("{} ({})", p.giver, x.year)))
+    input.history.iter().flat_map(move |x| {
+        x.pairs
+            .iter()
+            .filter(move |p| p.receiver == receiver)
+            .map(|p| format!("{} ({})", p.giver, x.year))
+    })
 }
 
 /// Return the receivers for this person.
 fn receivers_for<'a>(giver: &'a str, input: &'a Input) -> impl Iterator<Item = String> + use<'a> {
-    input.history.iter().flat_map(move |x| x.pairs.iter().filter(move |p| p.giver == giver).map(|p|
-                                                                                                format!("{} ({})", p.receiver, x.year)))
+    input.history.iter().flat_map(move |x| {
+        x.pairs
+            .iter()
+            .filter(move |p| p.giver == giver)
+            .map(|p| format!("{} ({})", p.receiver, x.year))
+    })
 }
 
 fn compose_message(pair: &Pair<String>, input: &Input) -> Result<Message, fmt::Error> {
@@ -202,42 +275,87 @@ fn compose_message(pair: &Pair<String>, input: &Input) -> Result<Message, fmt::E
         writeln!(body, ".")?;
     }
 
-    writeln!(body, r#"
+    writeln!(
+        body,
+        r#"
 * * *
 Brought to you by secret-santa[1].
 
 [1]: https://github.com/shanecelis/secret-santa/blob/main/src/main.rs
-"#)?;
+"#
+    )?;
 
-    let email = input.people.iter().find(|p| p.name == pair.giver).expect("Failed to find email address").email.clone();
+    let email = input
+        .people
+        .iter()
+        .find(|p| p.name == pair.giver)
+        .expect("Failed to find email address")
+        .email
+        .clone();
     let name_and_email = format!("{} <{}>", pair.giver, email);
-    Ok(Message { subject, body, email: name_and_email })
+    Ok(Message {
+        subject,
+        body,
+        email: name_and_email,
+    })
 }
 
-fn extract_pos<V>(model: Model<V>) -> Vec<V> where V: Clone, V: Eq, V: Hash, V: Debug{
-    model.vars().filter_map(|v| v.is_pos().then(|| v.unwrap())).collect()
+fn extract_pos<V>(model: Model<V>) -> Vec<V>
+where
+    V: Clone,
+    V: Eq,
+    V: Hash,
+    V: Debug,
+{
+    model
+        .vars()
+        .filter_map(|v| v.is_pos().then(|| v.unwrap()))
+        .collect()
 }
 
-fn main() -> std::io::Result<()>{
+fn main() -> std::io::Result<()> {
     let cli = Cli::parse();
 
     if cli.write_default {
         let mut input = Input::default();
-        let a = Person { name: String::from("John"), email: String::from("john@email.com") };
-        let b = Person { name: String::from("Sean"), email: String::from("sean@email.com") };
-        let c = Person { name: String::from("Shane"), email: String::from("shane@email.com") };
+        let a = Person {
+            name: String::from("John"),
+            email: String::from("john@email.com"),
+        };
+        let b = Person {
+            name: String::from("Sean"),
+            email: String::from("sean@email.com"),
+        };
+        let c = Person {
+            name: String::from("Shane"),
+            email: String::from("shane@email.com"),
+        };
         input.people.push(a.clone());
         input.people.push(b.clone());
         input.people.push(c.clone());
-        input.blacklist_sets.push(vec![a.name.clone(), b.name.clone()]);
-        input.whitelist.push(Pair::new(b.name.clone(), c.name.clone()));
-        input.blacklist.push(Pair::new(b.name.clone(), c.name.clone()));
-        input.history.push(Solution { year: 2024, exclude_pairs: true,
-                                      pairs: vec![Pair::new(a.name.clone(), c.name.clone()),
-                                                  Pair::new(b.name.clone(), a.name.clone()),
-                                                  Pair::new(c.name.clone(), b.name.clone())]});
+        input
+            .blacklist_sets
+            .push(vec![a.name.clone(), b.name.clone()]);
+        input
+            .whitelist
+            .push(Pair::new(b.name.clone(), c.name.clone()));
+        input
+            .blacklist
+            .push(Pair::new(b.name.clone(), c.name.clone()));
+        input.history.push(Solution {
+            year: 2024,
+            exclude_pairs: true,
+            pairs: vec![
+                Pair::new(a.name.clone(), c.name.clone()),
+                Pair::new(b.name.clone(), a.name.clone()),
+                Pair::new(c.name.clone(), b.name.clone()),
+            ],
+        });
         // TODO: Should use a stream here.
-        println!("{}", ron::ser::to_string_pretty(&input, PrettyConfig::default()).unwrap());
+        println!(
+            "{}",
+            ron::ser::to_string_pretty(&input, PrettyConfig::default()).unwrap()
+        );
         return Ok(());
     }
 
@@ -258,7 +376,7 @@ fn main() -> std::io::Result<()>{
 
     // Exclude historical pairs.
     for solution in &input.history {
-        if ! solution.exclude_pairs {
+        if !solution.exclude_pairs {
             continue;
         }
         exclude_pairs(solution.pairs.iter().cloned(), &mut encoder);
@@ -296,7 +414,10 @@ fn main() -> std::io::Result<()>{
         std::process::exit(1);
     }
 
-    println!("Found {} independent solutions. Choosing one.", solutions.len());
+    println!(
+        "Found {} independent solutions. Choosing one.",
+        solutions.len()
+    );
 
     let mut rng = rand::thread_rng();
     let mut pairs = solutions.swap_remove((0..solutions.len()).choose(&mut rng).unwrap());
@@ -328,22 +449,25 @@ fn main() -> std::io::Result<()>{
     Ok(())
 }
 
-
 #[cfg(test)]
 mod test {
     use super::*;
 
-
     fn p0() -> Person {
-        Person { name: String::from("First Last"), email: String::from("name@email.com") }
+        Person {
+            name: String::from("First Last"),
+            email: String::from("name@email.com"),
+        }
     }
-
 
     #[test]
     fn parse_person() {
         let p = p0();
         // assert_eq!(ron::ser::to_string_pretty(&p, PrettyConfig::default()).unwrap(), "");
-        assert_eq!(ron::ser::to_string(&p).unwrap(), "(name:\"First Last\",email:\"name@email.com\")");
+        assert_eq!(
+            ron::ser::to_string(&p).unwrap(),
+            "(name:\"First Last\",email:\"name@email.com\")"
+        );
     }
 }
 
