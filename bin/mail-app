@@ -70,3 +70,4 @@ tell application "Mail"
     end if
 end tell
 EOF
+
