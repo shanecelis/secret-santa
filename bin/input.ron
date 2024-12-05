@@ -1,0 +1,59 @@
+(
+    people: [
+        (
+            name: "John",
+            email: "john@email.com",
+        ),
+        (
+            name: "Sean",
+            email: "sean@email.com",
+        ),
+        (
+            name: "Shane",
+            email: "shane@email.com",
+        ),
+    ],
+    whitelist: [
+        (
+            giver: "Sean",
+            receiver: "Shane",
+        ),
+    ],
+    blacklist: [
+        (
+            giver: "Sean",
+            receiver: "Shane",
+        ),
+    ],
+    blacklist_sets: [
+        [
+            "John",
+            "Sean",
+        ],
+    ],
+    blacklist_symmetric: [
+        (
+            giver: "Sean",
+            receiver: "Shane",
+        ),
+    ],
+    history: [
+        (
+            note: "Year 2024",
+            pairs: [
+                (
+                    giver: "John",
+                    receiver: "Shane",
+                ),
+                (
+                    giver: "Sean",
+                    receiver: "John",
+                ),
+                (
+                    giver: "Shane",
+                    receiver: "Sean",
+                ),
+            ],
+        ),
+    ],
+)
