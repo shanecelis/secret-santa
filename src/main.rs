@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
-use satoxid::{CadicalEncoder, constraints::{Or, ExactlyK, Not, And, If}, Encoder, Backend};
+use satoxid::{CadicalEncoder, constraints::{Or, ExactlyK, Not, And, If}, Encoder, Backend, Model};
 use std::{
     cmp::Reverse,
     fmt::{self, Debug, Write},
     fs::File,
     path::PathBuf,
-    iter,
     hash::Hash,
 };
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use rand::prelude::IteratorRandom;
+use clap::Parser;
 use ron::ser::PrettyConfig;
 use cmd_lib::run_cmd;
 
@@ -117,6 +117,12 @@ fn exclude_pairs<T: Debug + Eq + Hash + PartialEq + Clone>(lits: impl Iterator<I
     encoder.add_constraint(Not(Or(lits)));
 }
 
+#[allow(dead_code)]
+fn exclude_some_pairs<T: Debug + Eq + Hash + PartialEq + Clone>(lits: impl Iterator<Item = Pair<T>> + Clone,
+                                                           encoder: &mut Encoder<Pair<T>, impl Backend>) {
+    encoder.add_constraint(Not(And(lits)));
+}
+
 fn exclude_pairs_symmetric<T: Debug + Eq + Hash + PartialEq + Clone>(lits: impl Iterator<Item = Pair<T>> + Clone,
                                                                      encoder: &mut Encoder<Pair<T>, impl Backend>) {
     exclude_pairs(lits.clone(), encoder);
@@ -208,6 +214,10 @@ Brought to you by secret-santa[1].
     Ok(Message { subject, body, email: name_and_email })
 }
 
+fn extract_pos<V>(model: Model<V>) -> Vec<V> where V: Clone, V: Eq, V: Hash, V: Debug{
+    model.vars().filter_map(|v| v.is_pos().then(|| v.unwrap())).collect()
+}
+
 fn main() -> std::io::Result<()>{
     let cli = Cli::parse();
 
@@ -254,38 +264,66 @@ fn main() -> std::io::Result<()>{
         exclude_pairs(solution.pairs.iter().cloned(), &mut encoder);
     }
 
-    if let Some(model) = encoder.solve() {
+    let mut solutions = vec![];
 
-        let mut pairs: Vec<Pair<String>> = model.vars().filter_map(|v| v.is_pos().then(|| v.unwrap())).collect();
-        pairs.sort_by_key(|p| p.giver.clone());
-
-        let mut msgs = vec![];
-        /// Generate all the messages first to confirm there aren't any errors.
-        for pair in &pairs {
-            println!("{:?}", pair);
-            let msg = compose_message(pair, &input).expect("Failed to compose message");
-            msgs.push(msg);
+    for _ in 0..100 {
+        if let Some(model) = encoder.solve() {
+            let pairs: Vec<Pair<String>> = extract_pos(model);
+            // Two different kinds of exclusions can be done to find multiple
+            // solutions:
+            //
+            // 1) This excludes_some_pairs ensures you can't repeat the same
+            //    thing but variations are allowed.
+            //
+            // ```
+            // exclude_some_pairs(pairs.iter().cloned(), &mut encoder);
+            // ```
+            //
+            // 2) This exlude_pairs ensures none of the pairings found are repeated.
+            //
+            // ```
+            // exclude_pairs(pairs.iter().cloned(), &mut encoder);
+            // ````
+            //
+            // We're doing #2 to ensure variety when choosing a random one.
+            exclude_pairs(pairs.iter().cloned(), &mut encoder);
+            solutions.push(pairs);
         }
+    }
 
-        for msg in msgs {
-            let subject = msg.subject;
-            let body = msg.body;
-            let email = msg.email;
-            let arg = r"1 2 3";
-
-            if let Some(ref exec) = cli.exec {
-                let exec_args: Vec<&str> = exec.split_whitespace().collect();
-
-                if cli.dry_run {
-                    run_cmd!(echo $body | cat; echo $[exec_args] -s $subject $email)?;
-                } else {
-                    run_cmd!(echo $body | $[exec_args] -s $subject $email)?;
-                }
-            }
-        }
-    } else {
+    if solutions.len() == 0 {
         eprintln!("No secret santa solutions found!");
         std::process::exit(1);
+    }
+
+    println!("Found {} independent solutions. Choosing one.", solutions.len());
+
+    let mut rng = rand::thread_rng();
+    let mut pairs = solutions.swap_remove((0..solutions.len()).choose(&mut rng).unwrap());
+
+    pairs.sort_by(|a, b| a.giver.cmp(&b.giver));
+    let mut msgs = vec![];
+    // Generate all the messages first to confirm there aren't any errors.
+    for pair in &pairs {
+        println!("{:?}", pair);
+        let msg = compose_message(pair, &input).expect("Failed to compose message");
+        msgs.push(msg);
+    }
+
+    for msg in msgs {
+        let subject = msg.subject;
+        let body = msg.body;
+        let email = msg.email;
+
+        if let Some(ref exec) = cli.exec {
+            let exec_args: Vec<&str> = exec.split_whitespace().collect();
+
+            if cli.dry_run {
+                run_cmd!(echo $body | cat; echo $[exec_args] -s $subject $email)?;
+            } else {
+                run_cmd!(echo $body | $[exec_args] -s $subject $email)?;
+            }
+        }
     }
     Ok(())
 }
