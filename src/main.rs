@@ -48,11 +48,11 @@ impl Input {
     fn check_history(&self) {
         for solution in &self.history {
             for pair in &solution.pairs {
-                if self.people.iter().find(|p| p.name == pair.giver).is_none() {
+                if !self.people.iter().any(|p| p.name == pair.giver) {
                     panic!("Giver named '{}' present in history but not found in people set.", &pair.giver);
                 }
 
-                if self.people.iter().find(|p| p.name == pair.receiver).is_none() {
+                if !self.people.iter().any(|p| p.name == pair.receiver) {
                     panic!("Receiver named '{}' present in history but not found in people set.", &pair.receiver);
                 }
             }
@@ -170,7 +170,7 @@ fn compose_message(pair: &Pair<String>, input: &Input) -> Result<Message, fmt::E
     let mut receivers = receivers_for(giver, input).peekable();
 
     if receivers.peek().is_some() {
-        writeln!(body, "")?;
+        writeln!(body)?;
         write!(body, "You were Secret Santa for ")?;
         write!(body, "{}", receivers.next().unwrap())?;
         while let Some(receiver) = receivers.next() {
@@ -186,7 +186,7 @@ fn compose_message(pair: &Pair<String>, input: &Input) -> Result<Message, fmt::E
     let mut givers = givers_for(giver, input).peekable();
 
     if givers.peek().is_some() {
-        writeln!(body, "")?;
+        writeln!(body)?;
         write!(body, "You had these Secret Santas in Christmases past: ")?;
         write!(body, "{}", givers.next().unwrap())?;
         // for giver in givers {
@@ -291,7 +291,7 @@ fn main() -> std::io::Result<()>{
         }
     }
 
-    if solutions.len() == 0 {
+    if solutions.is_empty() {
         eprintln!("No secret santa solutions found!");
         std::process::exit(1);
     }
