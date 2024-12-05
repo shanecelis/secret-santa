@@ -514,7 +514,9 @@ fn main() -> std::io::Result<()> {
     let mut msgs = vec![];
     // Generate all the messages first to confirm there aren't any errors.
     for pair in &pairs {
-        println!("{:?}", pair);
+        if cli.dry_run {
+            println!("{:?}", pair);
+        }
         let msg = compose_message(pair, &input).expect("Failed to compose message");
         msgs.push(msg);
     }
