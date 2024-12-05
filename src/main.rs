@@ -534,7 +534,6 @@ fn main() -> std::io::Result<()> {
             } else {
                 run_cmd!(echo $body | $[exec_args] -s $subject $email)?;
             }
-            return Ok(());
         }
     }
     Ok(())
