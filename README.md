@@ -89,3 +89,14 @@ go back indefinitely though otherwise there would be no solutions.)
 # Code 
 
 See code [here](/src/main.rs).
+
+# TODO
+- [ ] Organize tool to accept subcommands: 
+  - generate <sol.ron>
+  - send <sol.ron> [name]
+- [ ] ROT13 solution file
+- [ ] Add Install and Example sections to README
+- [ ] Add license
+
+
+
